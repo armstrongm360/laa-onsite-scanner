@@ -36,7 +36,7 @@ if not st.session_state.authed:
     st.stop()
 
 # ---------------- GOOGLE SHEETS ----------------
-SHEET_NAME = st.secrets["sheet"]["name"]
+SHEET_ID = st.secrets["sheet"]["id"]          # ✅ use ID now
 WORKSHEET = st.secrets["sheet"]["worksheet"]
 
 SCOPES = [
@@ -49,7 +49,9 @@ creds = Credentials.from_service_account_info(
     scopes=SCOPES
 )
 gc = gspread.authorize(creds)
-ws = gc.open(SHEET_NAME).worksheet(WORKSHEET)
+
+# ✅ open by key (ID), not by name
+ws = gc.open_by_key(SHEET_ID).worksheet(WORKSHEET)
 
 # ---------------- STATE ----------------
 for k, v in {
@@ -76,7 +78,6 @@ def load_df() -> pd.DataFrame:
 def set_collected_yes(asset_id: str) -> bool:
     # Find exact match in column A (AssetID) and set Collected (col C) = YES
     asset_id = str(asset_id).strip()
-    # Find first matching cell in column 1 only (AssetID col)
     colA = ws.col_values(1)
     for i, val in enumerate(colA, start=1):
         if str(val).strip() == asset_id:

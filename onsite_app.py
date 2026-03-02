@@ -262,6 +262,7 @@ if st.session_state.pending_message:
         if st.button("OK"):
             st.session_state.pending_message = ""
             st.session_state.pending_kind = ""
+            st.session_state.last_scanned = ""
             
 
     elif kind == "warn_out":
@@ -350,6 +351,7 @@ with st.expander("Admin: View table"):
     )
     st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
+
 
 
 

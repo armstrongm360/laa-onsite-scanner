@@ -186,6 +186,12 @@ if st.session_state.pending_message:
 st.divider()
 
 with st.expander("Admin: View table"):
+    sheet_url = st.secrets["sheet"].get(
+        "url",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+    )
+
+    st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
 
 

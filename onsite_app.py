@@ -30,6 +30,7 @@ def require_pin():
             st.session_state.authed = True
             st.success("Logged in.")
             st.rerun()
+            
         else:
             st.error("Wrong PIN.")
 
@@ -128,14 +129,6 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-def clear_pending_and_rerun():
-    st.session_state.scan_input = ""
-    st.session_state.pending_kind = ""
-    st.session_state.pending_message = ""
-    st.session_state.asset_pending = ""
-    st.session_state.last_scanned = ""
-    st.rerun()
 
 def reset_checkout_flow():
     st.session_state.step = "await_gc"
@@ -269,7 +262,7 @@ if st.session_state.pending_message:
         if st.button("OK"):
             st.session_state.pending_message = ""
             st.session_state.pending_kind = ""
-            st.rerun()
+            
 
     elif kind == "warn_out":
         st.warning(st.session_state.pending_message)
@@ -292,13 +285,13 @@ if st.session_state.pending_message:
                     })
                     st.session_state.last_result = f"✅ Checked OUT {asset_id} to GC {gc_id}"
                     reset_checkout_flow()
-                    st.rerun()
+                    
 
         with c2:
             if st.button("Cancel ❌"):
                 st.session_state.last_result = "❌ Cancelled (no change)"
                 reset_checkout_flow()
-                st.rerun()
+                
 
     elif kind == "warn_in":
         st.warning(st.session_state.pending_message)
@@ -323,7 +316,7 @@ if st.session_state.pending_message:
                     st.session_state.pending_kind = ""
                     st.session_state.asset_pending = ""
                     st.session_state.last_scanned = ""
-                    st.rerun()
+                    
 
         with c2:
             if st.button("Cancel ❌"):
@@ -332,7 +325,7 @@ if st.session_state.pending_message:
                 st.session_state.pending_kind = ""
                 st.session_state.asset_pending = ""
                 st.session_state.last_scanned = ""
-                st.rerun()
+                
 
     else:
         # error
@@ -346,7 +339,7 @@ if st.session_state.pending_message:
             # If we were mid-checkout, reset to avoid confusion
             if st.session_state.mode.startswith("Check-out"):
                 reset_checkout_flow()
-            st.rerun()
+            
 
 st.divider()
 
@@ -357,5 +350,6 @@ with st.expander("Admin: View table"):
     )
     st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
+
 
 

@@ -147,11 +147,7 @@ def reset_checkout_flow():
     st.session_state.last_scanned = ""
     # do not wipe last_result (useful feedback)
 
-def set_mode(new_mode: str):
-    st.session_state.mode = new_mode
-    # reset flow when switching modes
-    reset_checkout_flow()
-    st.rerun()
+
 
 # ---------------- UI: MODE ----------------
 ensure_columns_exist_or_warn()
@@ -173,6 +169,13 @@ if st.session_state.mode != st.session_state.prev_mode:
     st.session_state.prev_mode = st.session_state.mode
 
 st.header("Scanner")
+left, right = st.columns([2, 1], vertical_alignment="top")
+
+with right:
+    st.subheader("Status")
+    st.write(f"**Last scan:** {st.session_state.last_scanned or '—'}")
+    if st.session_state.last_result:
+        st.info(st.session_state.last_result)
 
 # ---------------- SCAN HANDLER (STATE MACHINE) ----------------
 def handle_scan_change():
@@ -354,4 +357,5 @@ with st.expander("Admin: View table"):
     )
     st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
+
 

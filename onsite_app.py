@@ -134,7 +134,6 @@ def reset_checkout_flow():
     st.session_state.step = "await_gc"
     st.session_state.gc_pending = ""
     st.session_state.asset_pending = ""
-    st.session_state.scan_input = ""
     st.session_state.pending_kind = ""
     st.session_state.pending_message = ""
     st.session_state.last_scanned = ""
@@ -351,6 +350,7 @@ with st.expander("Admin: View table"):
     )
     st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
+
 
 
 

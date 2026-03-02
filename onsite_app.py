@@ -156,28 +156,23 @@ def set_mode(new_mode: str):
 # ---------------- UI: MODE ----------------
 ensure_columns_exist_or_warn()
 
-mode = st.radio(
+# Track previous mode so we can reset state when it changes
+if "prev_mode" not in st.session_state:
+    st.session_state.prev_mode = "Check-out (Student takes device)"
+
+st.radio(
     "Mode",
     ["Check-out (Student takes device)", "Check-in (Return device)"],
-    index=0 if st.session_state.mode.startswith("Check-out") else 1,
+    key="mode",
     horizontal=True,
-    on_change=lambda: set_mode(
-        "Check-out (Student takes device)" if st.session_state.mode.startswith("Check-in") else "Check-in (Return device)"
-    )
 )
 
-# (Streamlit radio on_change above is a bit awkward; keep mode synced)
-st.session_state.mode = mode
+# If mode changed, reset flow (NO st.rerun needed)
+if st.session_state.mode != st.session_state.prev_mode:
+    reset_checkout_flow()
+    st.session_state.prev_mode = st.session_state.mode
 
 st.header("Scanner")
-
-left, right = st.columns([2, 1], vertical_alignment="top")
-
-with right:
-    st.subheader("Status")
-    st.write(f"**Last scan:** {st.session_state.last_scanned or '—'}")
-    if st.session_state.last_result:
-        st.info(st.session_state.last_result)
 
 # ---------------- SCAN HANDLER (STATE MACHINE) ----------------
 def handle_scan_change():
@@ -359,3 +354,4 @@ with st.expander("Admin: View table"):
     )
     st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
+

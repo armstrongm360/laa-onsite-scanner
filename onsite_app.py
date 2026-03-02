@@ -118,9 +118,7 @@ sheet_url = st.secrets["sheet"].get(
     f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 )
 
-st.markdown(
-    f'<a href="{sheet_url}" target="_blank">📄 Open Google Sheet</a>',
-    unsafe_allow_html=True
+st.link_button("📄 Open Google Sheet", sheet_url)
 )
 sheet_url = st.secrets["sheet"].get(
     "url",
@@ -189,6 +187,7 @@ st.divider()
 
 with st.expander("Admin: View table"):
     st.dataframe(load_df(), use_container_width=True)
+
 
 
 

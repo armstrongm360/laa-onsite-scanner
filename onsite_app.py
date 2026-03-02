@@ -117,7 +117,6 @@ def update_cells(row: int, updates: dict[str, str]) -> None:
 # ---------------- SESSION STATE ----------------
 defaults = {
     "mode": "Check-out (Student takes device)",
-    "scan_input": "",
     "step": "await_gc",         # await_gc, await_asset (checkout mode)
     "gc_pending": "",
     "asset_pending": "",
@@ -125,6 +124,8 @@ defaults = {
     "pending_message": "",
     "last_scanned": "",
     "last_result": "",
+    "flash": "",                # ✅ one-time success message
+    "scanner_key": 0,           # ✅ forces input to clear by recreating widget
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -168,10 +169,14 @@ with right:
     st.write(f"**Last scan:** {st.session_state.last_scanned or '—'}")
     if st.session_state.last_result:
         st.info(st.session_state.last_result)
-
+# ✅ One-time success banner (shows once then clears)
+if st.session_state.flash:
+    st.success(st.session_state.flash)
+    st.session_state.flash = ""
 # ---------------- SCAN HANDLER (STATE MACHINE) ----------------
 def handle_scan_change():
-    raw = st.session_state.scan_input.strip()
+    current_key = f"scan_input_{st.session_state.scanner_key}"
+    raw = st.session_state.get(current_key, "").strip()
     if not raw:
         return
 
@@ -180,41 +185,39 @@ def handle_scan_change():
 
     # ---------- CHECK-IN MODE: asset only ----------
     if st.session_state.mode.startswith("Check-in"):
-        # treat scan as AssetID
         asset_id = raw
         if asset_id not in df["AssetID"].astype(str).values:
             st.session_state.pending_kind = "error"
             st.session_state.pending_message = f"{asset_id} NOT FOUND in On-Site list."
-            st.session_state.scan_input = ""
+            st.session_state.scanner_key += 1
             return
 
         row = df.loc[df["AssetID"].astype(str) == asset_id].iloc[0]
         checked_out_to = str(row.get("CheckedOutTo", "")).strip()
 
         st.session_state.asset_pending = asset_id
+        st.session_state.pending_kind = "warn_in"
         if checked_out_to:
-            st.session_state.pending_kind = "warn_in"
             st.session_state.pending_message = f"{asset_id} is checked out to GC {checked_out_to}. Mark as returned?"
         else:
-            st.session_state.pending_kind = "warn_in"
             st.session_state.pending_message = f"{asset_id} is not currently checked out. Mark as collected anyway?"
-        st.session_state.scan_input = ""
+
+        st.session_state.scanner_key += 1
         return
 
     # ---------- CHECK-OUT MODE: GC then asset ----------
     if st.session_state.step == "await_gc":
-        # treat scan as GC ID
         if not validate_gc_id(raw):
             st.session_state.pending_kind = "error"
             st.session_state.pending_message = f"{raw} is not a valid GC ID (must be 5–10 digits)."
-            st.session_state.scan_input = ""
+            st.session_state.scanner_key += 1
             return
 
         st.session_state.gc_pending = raw
         st.session_state.step = "await_asset"
         st.session_state.pending_kind = "info"
         st.session_state.pending_message = f"GC {raw} captured. Now scan the DEVICE AssetID."
-        st.session_state.scan_input = ""
+        st.session_state.scanner_key += 1
         return
 
     # step == await_asset
@@ -223,6 +226,7 @@ def handle_scan_change():
         st.session_state.pending_kind = "error"
         st.session_state.pending_message = f"{asset_id} NOT FOUND in On-Site list. (Checkout cancelled — rescan GC ID.)"
         reset_checkout_flow()
+        st.session_state.scanner_key += 1
         return
 
     row = df.loc[df["AssetID"].astype(str) == asset_id].iloc[0]
@@ -231,16 +235,16 @@ def handle_scan_change():
     st.session_state.asset_pending = asset_id
 
     if checked_out_to:
-        # already out
         st.session_state.pending_kind = "error"
         st.session_state.pending_message = f"{asset_id} is already checked out to GC {checked_out_to}. (Checkout cancelled — rescan GC ID.)"
         reset_checkout_flow()
+        st.session_state.scanner_key += 1
         return
 
     gc_id = st.session_state.gc_pending
     st.session_state.pending_kind = "warn_out"
     st.session_state.pending_message = f"Assign device {asset_id} to GC {gc_id}?"
-    st.session_state.scan_input = ""
+    st.session_state.scanner_key += 1
 
 # ---------------- SCANNER INPUT + PROMPT ----------------
 with left:
@@ -250,7 +254,12 @@ with left:
         prompt = "Scan DEVICE AssetID"
 
     st.caption(f"Next step: **{prompt}**. The box clears automatically after each scan.")
-    st.text_input(prompt, key="scan_input", on_change=handle_scan_change, placeholder="Scan now…")
+    st.text_input(
+        prompt,
+        key=f"scan_input_{st.session_state.scanner_key}",
+        on_change=handle_scan_change,
+        placeholder="Scan now…"
+    )
 
 # ---------------- ACTION PANELS ----------------
 if st.session_state.pending_message:
@@ -273,6 +282,7 @@ if st.session_state.pending_message:
                 asset_id = st.session_state.asset_pending
                 gc_id = st.session_state.gc_pending
                 row_num = find_asset_row(asset_id)
+
                 if row_num is None:
                     st.error("Could not locate this AssetID row in the sheet.")
                 else:
@@ -283,14 +293,20 @@ if st.session_state.pending_message:
                         "CheckedOutAt": ts,
                         "LastAction": "OUT",
                     })
+
                     st.session_state.last_result = f"✅ Checked OUT {asset_id} to GC {gc_id}"
+                    st.session_state.flash = f"✅ Success: {asset_id} checked out to GC {gc_id}"
                     reset_checkout_flow()
+                    st.session_state.scanner_key += 1   # ✅ force input box to clear
                     
 
         with c2:
             if st.button("Cancel ❌"):
                 st.session_state.last_result = "❌ Cancelled (no change)"
+                st.session_state.pending_message = ""
+                st.session_state.pending_kind = ""
                 reset_checkout_flow()
+                st.session_state.scanner_key += 1   # ✅ clear input box
                 
 
     elif kind == "warn_in":
@@ -301,6 +317,7 @@ if st.session_state.pending_message:
             if st.button("Confirm Check-in ✅"):
                 asset_id = st.session_state.asset_pending
                 row_num = find_asset_row(asset_id)
+
                 if row_num is None:
                     st.error("Could not locate this AssetID row in the sheet.")
                 else:
@@ -311,11 +328,14 @@ if st.session_state.pending_message:
                         "CheckedInAt": ts,
                         "LastAction": "IN",
                     })
+
                     st.session_state.last_result = f"✅ Checked IN {asset_id}"
+                    st.session_state.flash = f"✅ Success: {asset_id} checked in"
                     st.session_state.pending_message = ""
                     st.session_state.pending_kind = ""
                     st.session_state.asset_pending = ""
                     st.session_state.last_scanned = ""
+                    st.session_state.scanner_key += 1   # ✅ clear input box
                     
 
         with c2:
@@ -350,6 +370,7 @@ with st.expander("Admin: View table"):
     )
     st.link_button("📄 Open Google Sheet", sheet_url)
     st.dataframe(load_df(), use_container_width=True)
+
 
 
 

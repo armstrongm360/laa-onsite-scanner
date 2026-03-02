@@ -113,6 +113,15 @@ def handle_scan_change():
 # ---------------- UI ----------------
 st.header("Scanner")
 
+sheet_url = st.secrets["sheet"].get(
+    "url",
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+)
+
+st.markdown(
+    f'<a href="{sheet_url}" target="_blank">📄 Open Google Sheet</a>',
+    unsafe_allow_html=True
+)
 left, right = st.columns([2, 1], vertical_alignment="top")
 
 with left:
@@ -171,4 +180,5 @@ st.divider()
 
 with st.expander("Admin: View table"):
     st.dataframe(load_df(), use_container_width=True)
+
 

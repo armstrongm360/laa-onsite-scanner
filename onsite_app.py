@@ -157,7 +157,8 @@ if st.session_state.pending_message:
                 st.session_state.pending_message = ""
                 st.session_state.pending_kind = ""
                 st.session_state.pending_asset = ""
-                st.info("Cancelled. Ready for next computer.")
+                st.session_state.last_scanned = ""
+                st.rerun()
     else:
         st.error(st.session_state.pending_message)
         if st.button("OK (next computer)"):
@@ -170,3 +171,4 @@ st.divider()
 
 with st.expander("Admin: View table"):
     st.dataframe(load_df(), use_container_width=True)
+

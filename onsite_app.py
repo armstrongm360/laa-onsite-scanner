@@ -60,7 +60,6 @@ def now_utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 def get_header_map() -> dict[str, int]:
-    """Return mapping header -> 1-based column index."""
     headers = ws.row_values(1)
     return {h.strip(): i + 1 for i, h in enumerate(headers) if h.strip()}
 
@@ -74,7 +73,6 @@ def validate_gc_id(s: str) -> bool:
     return bool(RE_NUMERIC.match(s)) and (5 <= len(s) <= 10)
 
 def find_asset_row(asset_id: str) -> int | None:
-    """Find row number by exact match in AssetID column."""
     asset_id = str(asset_id).strip()
     col_map = get_header_map()
     if "AssetID" not in col_map:
@@ -102,41 +100,60 @@ def ensure_columns_exist_or_warn():
         st.error(
             "Your Google Sheet is missing required columns: "
             + ", ".join(missing)
-            + "\n\nFix the header row (row 1) on the 'assets' tab to include:\n"
+            + "\n\nFix the header row (row 1) to include:\n"
             + "AssetID | Category | Collected | CheckedOutTo | CheckedOutAt | CheckedInAt | LastAction"
         )
         st.stop()
 
 def update_cells(row: int, updates: dict[str, str]) -> None:
-    """Update multiple columns in the same row by header name."""
     col_map = get_header_map()
     for header, value in updates.items():
         if header not in col_map:
             raise KeyError(f"Missing column: {header}")
         ws.update_cell(row, col_map[header], value)
 
+def summarize_device(row: pd.Series) -> str:
+    asset_id = str(row.get("AssetID", "")).strip()
+    cat = str(row.get("Category", "")).strip() or "—"
+    collected = str(row.get("Collected", "")).strip() or "—"
+    out_to = str(row.get("CheckedOutTo", "")).strip()
+    out_at = str(row.get("CheckedOutAt", "")).strip()
+    in_at = str(row.get("CheckedInAt", "")).strip()
+    last_action = str(row.get("LastAction", "")).strip() or "—"
+
+    if out_to:
+        status = f"CHECKED OUT to GC {out_to}" + (f" (at {out_at})" if out_at else "")
+    else:
+        status = "NOT checked out"
+
+    return (
+        f"**AssetID:** {asset_id}\n\n"
+        f"**Category:** {cat}\n\n"
+        f"**Status:** {status}\n\n"
+        f"**Collected:** {collected}\n\n"
+        f"**LastAction:** {last_action}\n\n"
+        f"**CheckedInAt:** {in_at or '—'}"
+    )
+
 # ---------------- SESSION STATE ----------------
 defaults = {
     "mode": "Check-out (Student takes device)",
 
-    # state machine
-    "step": "await_gc",         # await_gc, await_asset (checkout mode)
+    "step": "await_gc",
     "gc_pending": "",
     "asset_pending": "",
 
-    # UI prompt panels
     "pending_kind": "",
     "pending_message": "",
 
-    # status
     "last_scanned": "",
     "last_result": "",
 
-    # reliable scanner clearing
     "scanner_key": 0,
-
-    # one-time success/info flash banner
     "flash": {"kind": "", "msg": ""},
+
+    # Lookup-only output
+    "lookup_markdown": "",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -149,7 +166,6 @@ def clear_pending():
     st.session_state.last_scanned = ""
 
 def bump_scanner():
-    # changes widget key so the visible textbox resets
     st.session_state.scanner_key += 1
 
 def reset_checkout_flow():
@@ -158,7 +174,9 @@ def reset_checkout_flow():
     st.session_state.asset_pending = ""
     clear_pending()
     bump_scanner()
-    # do not wipe last_result (useful feedback)
+
+def clear_lookup():
+    st.session_state.lookup_markdown = ""
 
 # ---------------- UI: MODE ----------------
 ensure_columns_exist_or_warn()
@@ -168,17 +186,21 @@ if "prev_mode" not in st.session_state:
 
 st.radio(
     "Mode",
-    ["Check-out (Student takes device)", "Check-in (Return device)"],
+    [
+        "Check-out (Student takes device)",
+        "Check-in (Return device)",
+        "Lookup (What is this device?)",
+    ],
     key="mode",
     horizontal=True,
 )
 
 if st.session_state.mode != st.session_state.prev_mode:
     reset_checkout_flow()
+    clear_lookup()
     st.session_state.prev_mode = st.session_state.mode
 
 # ---------------- FLASH BANNER ----------------
-# Show once, then clear
 if st.session_state.flash.get("msg"):
     kind = st.session_state.flash.get("kind", "success")
     msg = st.session_state.flash.get("msg", "")
@@ -203,7 +225,6 @@ with right:
 
 # ---------------- SCAN HANDLER (STATE MACHINE) ----------------
 def handle_scan_change():
-    # read from the *dynamic* widget key
     key = f"scan_input_{st.session_state.scanner_key}"
     raw = str(st.session_state.get(key, "")).strip()
     if not raw:
@@ -212,8 +233,20 @@ def handle_scan_change():
     st.session_state.last_scanned = raw
     df = load_df()
 
-    # Always clear the box after processing by bumping key
-    # (do it at end via bump_scanner(), but we can early-return safely too)
+    # ---------- LOOKUP MODE ----------
+    if st.session_state.mode.startswith("Lookup"):
+        asset_id = raw
+        if asset_id not in df["AssetID"].astype(str).values:
+            st.session_state.flash = {"kind": "error", "msg": f"{asset_id} NOT FOUND in this sheet."}
+            st.session_state.lookup_markdown = ""
+            bump_scanner()
+            return
+
+        row = df.loc[df["AssetID"].astype(str) == asset_id].iloc[0]
+        st.session_state.lookup_markdown = summarize_device(row)
+        st.session_state.flash = {"kind": "success", "msg": "Lookup complete."}
+        bump_scanner()
+        return
 
     # ---------- CHECK-IN MODE: asset only ----------
     if st.session_state.mode.startswith("Check-in"):
@@ -255,7 +288,7 @@ def handle_scan_change():
     asset_id = raw
     if asset_id not in df["AssetID"].astype(str).values:
         st.session_state.pending_kind = "error"
-        st.session_state.pending_message = f"{asset_id} NOT FOUND in On-Site list. (Checkout cancelled — rescan GC ID.)"
+        st.session_state.pending_message = f"{asset_id} NOT FOUND in list. (Checkout cancelled — rescan GC ID.)"
         reset_checkout_flow()
         return
 
@@ -282,8 +315,10 @@ def handle_scan_change():
 with left:
     if st.session_state.mode.startswith("Check-out"):
         prompt = "Scan GC ID" if st.session_state.step == "await_gc" else "Scan DEVICE AssetID"
-    else:
+    elif st.session_state.mode.startswith("Check-in"):
         prompt = "Scan DEVICE AssetID"
+    else:
+        prompt = "Scan DEVICE AssetID (Lookup)"
 
     st.caption(f"Next step: **{prompt}**. The box clears automatically after each scan.")
     st.text_input(
@@ -292,6 +327,9 @@ with left:
         on_change=handle_scan_change,
         placeholder="Scan now…",
     )
+
+    if st.session_state.mode.startswith("Lookup") and st.session_state.lookup_markdown:
+        st.markdown(st.session_state.lookup_markdown)
 
 # ---------------- ACTION PANELS ----------------
 if st.session_state.pending_message:
@@ -332,7 +370,6 @@ if st.session_state.pending_message:
                 st.session_state.last_result = "❌ Cancelled (no change)"
                 clear_pending()
                 bump_scanner()
-                # If in checkout mode, go back to scanning GC
                 if st.session_state.mode.startswith("Check-out"):
                     st.session_state.step = "await_gc"
                     st.session_state.gc_pending = ""
